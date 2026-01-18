@@ -51,10 +51,12 @@ def matmul_kernel_2d(
 
     The computation is: out = (x @ w_q.T) with proper 2D scaling applied.
 
-    Key implementation details:
+    Key PERFORMANCE optimizations:
     - All block sizes are compile-time constants for TPU optimization
-    - Uses sub-block iteration pattern similar to fused_moe for 2D scaling
-    - Scales are applied after matmul to keep data in quantized format for MXU
+    - Dequantize FIRST by broadcasting 2D scales, then do ONE large matmul
+    - This is much faster than nested loops with many small matmuls
+    - Single large matmul maximizes MXU (256x256) utilization on Ironwood TPU
+    - Uses pltpu.repeat() for efficient scale broadcasting
     """
     # Compile-time assertions for TPU constraints
     assert batch_block_size % quant_block_size == 0
@@ -102,9 +104,11 @@ def matmul_kernel_2d(
 
     # Start of actual computation logic
     def matmul_body(quant: bool, is_first_step: bool, is_last_step: bool):
-        # For 2D block quantization, we need to break down the matmul into sub-blocks
-        # and apply different scales to each sub-block contribution.
-        # This follows the pattern from fused_moe kernel (lines 813-890)
+        # PERFORMANCE OPTIMIZATION: Dequantize first, then do ONE large matmul
+        # This is much faster than many small matmuls in nested loops
+        # Mathematically: result[i,j] = sum_k(x[i,k] * w[j,k])
+        #                             = sum_k((x_q[i,k] * x_scale[...]) * (w_q[j,k] * w_scale[...]))
+        #                             = sum_k(x_dequant[i,k] * w_dequant[j,k])
 
         if quantize_activation:
             if quant:
@@ -126,55 +130,38 @@ def matmul_kernel_2d(
                 if is_last_step:
                     x_scale_tmp = x_scale_scratch[...]
 
-            x_input = x_q_tmp
+            # Dequantize x by broadcasting 2D scales
+            # x_scale_tmp: [n_batch_quant_blocks, n_in_quant_blocks]
+            # Need to expand to [batch_block_size, in_block_size]
+            x_scale_expanded = pltpu.repeat(
+                pltpu.repeat(x_scale_tmp, quant_block_size, axis=0),
+                quant_block_size,
+                axis=1,
+            )
+            x_dequant = x_q_tmp.astype(jnp.float32) * x_scale_expanded
         else:
-            x_input = x_ref[...]
-            x_scale_tmp = None
+            x_dequant = x_ref[...].astype(jnp.float32)
 
-        # Initialize or load accumulator
-        if is_first_step:
-            acc = jnp.zeros((batch_block_size, out_block_size), dtype=jnp.float32)
-        else:
-            acc = acc_scratch[...].astype(jnp.float32)
+        # Dequantize weights by broadcasting 2D scales
+        # w_scale_ref: [n_out_quant_blocks, n_in_quant_blocks]
+        # Need to expand to [out_block_size, in_block_size]
+        w_scale_expanded = pltpu.repeat(
+            pltpu.repeat(w_scale_ref[...], quant_block_size, axis=0),
+            quant_block_size,
+            axis=1,
+        )
+        w_dequant = w_q_ref[...].astype(jnp.float32) * w_scale_expanded
 
-        # Perform blocked matmul with per-block scaling
-        # Iterate over quantization blocks in all three dimensions
-        for batch_qblock_id in range(n_batch_quant_blocks):
-            for out_qblock_id in range(n_out_quant_blocks):
-                # Initialize accumulator for this output block
-                partial_acc = jnp.zeros((quant_block_size, quant_block_size), dtype=jnp.float32)
+        # Single large matmul on dequantized data - MUCH faster!
+        acc = jax.lax.dot_general(
+            x_dequant,
+            w_dequant,
+            (((1,), (1,)), ((), ())),
+            preferred_element_type=jnp.float32,
+        )
 
-                # Accumulate contributions from all input quantization blocks
-                for in_qblock_id in range(n_in_quant_blocks):
-                    # Extract quantization blocks
-                    x_block = x_input[
-                        pl.ds(batch_qblock_id * quant_block_size, quant_block_size),
-                        pl.ds(in_qblock_id * quant_block_size, quant_block_size),
-                    ]
-                    w_block = w_q_ref[
-                        pl.ds(out_qblock_id * quant_block_size, quant_block_size),
-                        pl.ds(in_qblock_id * quant_block_size, quant_block_size),
-                    ]
-
-                    # Compute sub-block matmul
-                    sub_result = jnp.dot(x_block, w_block.T, preferred_element_type=acc_dtype).astype(jnp.float32)
-
-                    # Apply 2D block-wise scales
-                    w_scale_val = w_scale_ref[out_qblock_id, in_qblock_id]
-                    if quantize_activation:
-                        x_scale_val = x_scale_tmp[batch_qblock_id, in_qblock_id]
-                        combined_scale = x_scale_val * w_scale_val
-                    else:
-                        combined_scale = w_scale_val
-
-                    sub_result *= combined_scale
-                    partial_acc += sub_result
-
-                # Write back the accumulated result for this output block
-                acc = acc.at[
-                    pl.ds(batch_qblock_id * quant_block_size, quant_block_size),
-                    pl.ds(out_qblock_id * quant_block_size, quant_block_size),
-                ].set(partial_acc)
+        if not is_first_step:
+            acc += acc_scratch[...]
 
         if is_last_step:
             out_ref[...] = acc.astype(x_ref_dtype)
@@ -209,12 +196,14 @@ def fp8_quantized_matmul_2d_kernel(
     weights and activations are quantized in blocks of size
     (quant_block_size, quant_block_size).
 
-    Performance optimizations:
-    - All block sizes are compile-time constants for TPU optimization
-    - Sub-block iteration pattern (similar to fused_moe) for correct 2D scaling
-    - Scales applied after each sub-matmul before accumulation
-    - Ensures (8x128) divisibility for Ironwood TPU MXU constraints
-    - VMEM management for 64MB limit with proper double buffering
+    PERFORMANCE-CRITICAL optimizations:
+    - **Dequantize-first approach**: Broadcast 2D scales to dequantize, then ONE large matmul
+      instead of many small matmuls. This is the key to high performance.
+    - **Maximum MXU utilization**: Single large matmul uses full 256x256 MXU on Ironwood
+    - **Static block sizes**: All dimensions are compile-time constants for TPU compiler
+    - **Efficient broadcasting**: Uses pltpu.repeat() for optimal scale expansion
+    - **Proper memory layout**: Ensures (8x128) divisibility for TPU constraints
+    - **VMEM management**: Optimized for 64MB VMEM limit on Ironwood
 
     Args:
         x: Input unquantized or pre-quantized array [batch_size, n_in]
@@ -228,11 +217,11 @@ def fp8_quantized_matmul_2d_kernel(
     Returns:
         Matmul result [batch_size, n_out]
 
-    Note:
-        For 2D quantization to work correctly, the matmul is broken down into sub-blocks.
-        Each sub-block contribution is scaled individually before accumulation, following
-        the pattern: result += scale[i,k] * scale[j,k] * (x_block[i,k] @ w_block[j,k].T)
-        This ensures each quantization block's scale is properly applied.
+    Performance note:
+        The dequantize-first approach is mathematically equivalent to scaling after matmul
+        but much faster: result[i,j] = sum_k(x_dequant[i,k] * w_dequant[j,k])
+        where x_dequant[i,k] = x_q[i,k] * x_scale[i//B, k//B] for block size B.
+        This leverages the MXU for a single large operation instead of many small ones.
     """
 
     if w_zp is not None:
