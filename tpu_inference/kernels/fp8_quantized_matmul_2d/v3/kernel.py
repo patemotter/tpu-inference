@@ -399,12 +399,12 @@ def fp8_quantized_matmul_2d_kernel(
         grid_spec=pltpu.PrefetchScalarGridSpec(
             num_scalar_prefetch=0,
             in_specs=[
-                pl.BlockSpec(memory_space=pltpu.MemorySpace.ANY),  # x_hbm
-                pl.BlockSpec(memory_space=pltpu.MemorySpace.ANY),  # w_q_hbm
-                pl.BlockSpec(memory_space=pltpu.MemorySpace.ANY),  # w_scale_hbm
-                pl.BlockSpec(memory_space=pltpu.MemorySpace.ANY),  # x_abs_max_hbm
+                pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM),  # x_hbm
+                pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM),  # w_q_hbm
+                pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM),  # w_scale_hbm
+                pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM),  # x_abs_max_hbm
             ],
-            out_specs=pl.BlockSpec(memory_space=pltpu.MemorySpace.ANY),
+            out_specs=pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM),
             scratch_shapes=[
                 # VMEM for data blocks (double buffered)
                 pltpu.VMEM((2, quant_block_size, quant_block_size), x.dtype),  # x_x2
@@ -417,8 +417,8 @@ def fp8_quantized_matmul_2d_kernel(
                 pltpu.SMEM((2, 1, 1), jnp.float32),  # w_scale_x2_smem
                 pltpu.SMEM((2, 1, 1), jnp.float32),  # x_abs_max_x2_smem
                 pltpu.SMEM((1, 1), jnp.float32),  # x_scale_smem
-                # Semaphores
-                pltpu.SEM((2, 5)),
+                # Semaphores for async DMA synchronization
+                pltpu.SemaphoreType.DMA((2, 5)),
             ],
             grid=(n_batch, n_out, n_in),
         ),
