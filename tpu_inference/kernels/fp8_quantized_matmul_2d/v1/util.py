@@ -20,7 +20,9 @@ def unfold_args(
         if isinstance(arg, bool):
             unfold_args(conditions[1:], fn_conditions + (arg,), fn)
         else:
-            assert arg.dtype == jnp.bool and arg.size == 1
+            # Use shape check instead of size to avoid TracerBoolConversionError
+            assert arg.dtype == jnp.bool_
+            assert arg.shape == ()
             jax.lax.cond(
                 arg,
                 lambda: unfold_args(conditions[1:], fn_conditions + (True,), fn),
