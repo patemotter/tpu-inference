@@ -29,6 +29,7 @@ def shard_put(x: jax.Array, sharding_names: Tuple[str, ...] | P,
         return jax.device_put(x, mesh.devices.flatten()[0])
     return jax.device_put(x, NamedSharding(mesh, P(*sharding_names)))
 
+
 def round_up_to_multiple_of_128_within_limit(x: int, limit: int) -> int:
     """
     Rounds the given integer `x` up to the nearest multiple of 128, without

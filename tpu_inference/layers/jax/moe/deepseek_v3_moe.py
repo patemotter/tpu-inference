@@ -106,13 +106,13 @@ class DeepSeekV3Router(nnx.Module):
 
         if self.moe_backend == MoEBackend.FUSED_MOE or self.moe_backend == MoEBackend.VLLM_MOE:
             return scores_TE
-        
+
         else:
             original_scores_TE = scores_TE
             topk_indices_TX = self.get_topk_indices(scores_TE)
             weights_TX = jnp.take_along_axis(original_scores_TE,
-                                            topk_indices_TX,
-                                            axis=-1)
+                                             topk_indices_TX,
+                                             axis=-1)
 
             if self.norm_topk_prob:
                 weights_TX /= jnp.sum(weights_TX, axis=-1)[..., None] + 1e-20
@@ -135,5 +135,3 @@ class DeepSeekV3Router(nnx.Module):
                                    dtype=self.router_bias_dtype,
                                    sharding=self.e_sharding,
                                    random_init=self.random_init)
-
-

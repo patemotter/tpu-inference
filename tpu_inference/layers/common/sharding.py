@@ -121,8 +121,7 @@ class ShardingConfigManager:
             assert self._total_devices == len(device_indexes)
 
     @classmethod
-    def from_vllm_config(
-                         cls,
+    def from_vllm_config(cls,
                          vllm_config: 'VllmConfig') -> 'ShardingConfigManager':
 
         sharding_strategy = vllm_config.additional_config.get(
@@ -228,10 +227,9 @@ class ShardingConfigManager:
         return self._total_devices
 
     def __str__(self):
-        return (
-            f"ShardingConfigManager(total_devices={self.total_devices}, "
-            f"sharding_strategy={self.sharding_strategy}, "
-            f"device_indexes={self.device_indexes})")
+        return (f"ShardingConfigManager(total_devices={self.total_devices}, "
+                f"sharding_strategy={self.sharding_strategy}, "
+                f"device_indexes={self.device_indexes})")
 
 
 #TODO split this into block unique sharding config, i.e. attentionShardingConfig, MoEShardingConfig

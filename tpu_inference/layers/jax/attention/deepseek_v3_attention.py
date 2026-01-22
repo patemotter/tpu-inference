@@ -403,7 +403,8 @@ class MLA(nnx.Module):
             P(),  # query_start_loc: Replicated
             P(),  # distribution: Replicated
         )
-        out_specs = (self.attn_o_tnh, P(None, None, ShardingAxisName.ATTN_HEAD))
+        out_specs = (self.attn_o_tnh, P(None, None,
+                                        ShardingAxisName.ATTN_HEAD))
 
         def _ragged_paged_attention(*args):
             outputs = ragged_paged_attention(

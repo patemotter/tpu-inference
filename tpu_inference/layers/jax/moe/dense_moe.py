@@ -12,16 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import TYPE_CHECKING
+
 import jax
 import jax.numpy as jnp
-
 from flax import nnx
 from jaxtyping import Float
 
 from tpu_inference.layers.jax.moe.utils import modeling_flax_utils
 
+if TYPE_CHECKING:
+    from tpu_inference.layers.jax.moe.moe import MoE
+
+
 class DenseMoEEngine(nnx.Module):
     """Encapsulates logic for Dense/Standard MoE forward passes."""
+
     def __init__(self, moe_instance: 'MoE'):
         self.m = moe_instance
 
@@ -29,13 +35,17 @@ class DenseMoEEngine(nnx.Module):
         x_TD = jnp.asarray(x_TD, self.m.dtype)
         x_TD = nnx.with_sharding_constraint(x_TD, self.m.activation_ffw_td)
         with jax.named_scope("gating"):
-            gating_TEF = jnp.einsum('TD,EDF -> TEF', x_TD, self.m.kernel_gating_EDF.value)
-            activated_gating_TEF = modeling_flax_utils.ACT2FN[self.m.hidden_act](gating_TEF)
+            gating_TEF = jnp.einsum('TD,EDF -> TEF', x_TD,
+                                    self.m.kernel_gating_EDF.value)
+            activated_gating_TEF = modeling_flax_utils.ACT2FN[
+                self.m.hidden_act](gating_TEF)
         with jax.named_scope("up_projection"):
-            up_proj_TEF = jnp.einsum('TD,EDF -> TEF', x_TD, self.m.kernel_up_proj_EDF.value)
+            up_proj_TEF = jnp.einsum('TD,EDF -> TEF', x_TD,
+                                     self.m.kernel_up_proj_EDF.value)
         fuse_TEF = activated_gating_TEF * up_proj_TEF
         with jax.named_scope("down_projection"):
-            down_proj_TED = jnp.einsum('TEF,EFD -> TED', fuse_TEF, self.m.kernel_down_proj_EFD.value)
+            down_proj_TED = jnp.einsum('TEF,EFD -> TED', fuse_TEF,
+                                       self.m.kernel_down_proj_EFD.value)
         with jax.named_scope("sum"):
             output_TD = jnp.einsum('TED,TE -> TD', down_proj_TED, weights)
         return output_TD.astype(self.m.dtype)
@@ -45,14 +55,18 @@ class DenseMoEEngine(nnx.Module):
         x_TED = jnp.repeat(x_TD[:, None, :], num_experts, 1)
         x_TED = jnp.asarray(x_TED, self.m.dtype) * weights_TE[..., None]
         x_TED = nnx.with_sharding_constraint(x_TED, self.m.activation_ffw_ted)
-        
+
         with jax.named_scope("gating"):
-            gating_TEF = jnp.einsum('TED,EDF -> TEF', x_TED, self.m.kernel_gating_EDF.value)
-            activated_gating_TEF = modeling_flax_utils.ACT2FN[self.m.hidden_act](gating_TEF)
+            gating_TEF = jnp.einsum('TED,EDF -> TEF', x_TED,
+                                    self.m.kernel_gating_EDF.value)
+            activated_gating_TEF = modeling_flax_utils.ACT2FN[
+                self.m.hidden_act](gating_TEF)
         with jax.named_scope("up_projection"):
-            up_proj_TEF = jnp.einsum('TED,EDF -> TEF', x_TED, self.m.kernel_up_proj_EDF.value)
-        
+            up_proj_TEF = jnp.einsum('TED,EDF -> TEF', x_TED,
+                                     self.m.kernel_up_proj_EDF.value)
+
         fuse_TEF = activated_gating_TEF * up_proj_TEF
         with jax.named_scope("down_projection"):
-            down_proj_TED = jnp.einsum('TEF,EFD -> TED', fuse_TEF, self.m.kernel_down_proj_EFD.value)
+            down_proj_TED = jnp.einsum('TEF,EFD -> TED', fuse_TEF,
+                                       self.m.kernel_down_proj_EFD.value)
         return down_proj_TED.sum(axis=1).astype(self.m.dtype)
