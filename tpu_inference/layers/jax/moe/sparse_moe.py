@@ -200,7 +200,6 @@ def sparse_moe_distributed_fwd(
     with jax.named_scope("unpermute"):
         output_TD = unpermute_fn(final_intermediate_output,
                                  global_sort_indices, router_weights_TX,
-                                 moe_instance.num_experts_per_tok,
-                                 moe_instance.hidden_size, moe_instance.dtype)
+                                 moe_instance.num_experts_per_tok, moe_instance.dtype)
 
     return output_TD
