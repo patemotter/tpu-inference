@@ -1,0 +1,59 @@
+Traceback (most recent call last):
+  File "/mnt/disks/persist/ullm/vllm/vllm/v1/engine/core.py", line 926, in run_engine_core
+    engine_core = EngineCoreProc(*args, engine_index=dp_rank, **kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/disks/persist/ullm/vllm/vllm/v1/engine/core.py", line 691, in __init__
+    super().__init__(
+  File "/mnt/disks/persist/ullm/vllm/vllm/v1/engine/core.py", line 112, in __init__
+    num_gpu_blocks, num_cpu_blocks, kv_cache_config = self._initialize_kv_caches(
+                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/disks/persist/ullm/vllm/vllm/v1/engine/core.py", line 269, in _initialize_kv_caches
+    self.model_executor.initialize_from_config(kv_cache_configs)
+  File "/mnt/disks/persist/ullm/vllm/vllm/v1/executor/abstract.py", line 116, in initialize_from_config
+    self.collective_rpc("compile_or_warm_up_model")
+  File "/mnt/disks/persist/ullm/vllm/vllm/v1/executor/uniproc_executor.py", line 75, in collective_rpc
+    result = run_method(self.driver_worker, method, args, kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/disks/persist/ullm/vllm/vllm/v1/serial_utils.py", line 461, in run_method
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/disks/persist/my_tpu_inference/tpu_inference/worker/tpu_worker.py", line 360, in compile_or_warm_up_model
+    self.model_runner.capture_model()
+  File "/mnt/disks/persist/my_tpu_inference/tpu_inference/runner/tpu_runner.py", line 549, in capture_model
+    self.compilation_manager.capture_model()
+  File "/mnt/disks/persist/my_tpu_inference/tpu_inference/runner/compilation_manager.py", line 93, in capture_model
+    self._precompile_backbone_text_only()
+  File "/mnt/disks/persist/my_tpu_inference/tpu_inference/runner/compilation_manager.py", line 327, in _precompile_backbone_text_only
+    self._precompile_backbone_helper(
+  File "/mnt/disks/persist/my_tpu_inference/tpu_inference/runner/compilation_manager.py", line 233, in _precompile_backbone_helper
+    self._run_compilation(
+  File "/mnt/disks/persist/my_tpu_inference/tpu_inference/runner/compilation_manager.py", line 77, in _run_compilation
+    result = fn(*args)
+             ^^^^^^^^^
+  File "/mnt/disks/persist/my_tpu_inference/tpu_inference/runner/compilation_manager.py", line 218, in model_fn_wrapper
+    kv_caches, hidden_states, _ = self.runner.model_fn(
+                                  ^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/disks/persist/my_tpu_inference/tpu_inference/models/common/model_loader.py", line 275, in run_model
+    return model(*args)
+           ^^^^^^^^^^^^
+  File "/mnt/disks/persist/my_tpu_inference/tpu_inference/models/jax/deepseek_v3.py", line 1011, in __call__
+    new_kv_cache, x = block(x, is_prefill, kv_cache,
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/disks/persist/my_tpu_inference/tpu_inference/layers/jax/transformer_block.py", line 109, in __call__
+    logits_TD = moe_layer(normed_ffw_input_TD)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/disks/persist/my_tpu_inference/tpu_inference/layers/jax/moe/moe.py", line 247, in __call__
+    return mapped_moe_fwd(self, x_TD, weights_TX, indices_TX,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/disks/persist/my_tpu_inference/tpu_inference/layers/jax/moe/sparse_moe.py", line 201, in sparse_moe_distributed_fwd
+    output_TD = unpermute_fn(final_intermediate_output,
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/disks/persist/my_tpu_inference/tpu_inference/layers/jax/moe/utils.py", line 124, in unpermute_fn
+    output_TD = jnp.einsum(
+                ^^^^^^^^^^^
+  File "/mnt/disks/persist/vllm_env/lib/python3.12/site-packages/jax/_src/numpy/einsum.py", line 308, in einsum
+    operands, contractions = contract_path(
+                             ^^^^^^^^^^^^^^
+  File "/mnt/disks/persist/vllm_env/lib/python3.12/site-packages/opt_einsum/contract.py", line 324, in contract_path
+    raise ValueError(
+ValueError: Size of label 'T' for operand 1 (8) does not match previous terms (16).

@@ -49,10 +49,10 @@ def sparse_moe_distributed_fwd(
                           moe_instance.num_experts_per_tok,
                           moe_instance.num_local_experts)
 
-    expert_shard_id = jax.lax.axis_index(moe_instance.expert_axis_name)
-    local_expert_size = moe_instance.num_local_experts // moe_instance.num_expert_parallelism
-
     if moe_instance.num_expert_parallelism > 1:
+        expert_shard_id = jax.lax.axis_index(moe_instance.expert_axis_name)
+        local_expert_size = moe_instance.num_local_experts // moe_instance.num_expert_parallelism
+
         if moe_instance.is_batch_sharded_by_expert:
             # 2a. Send Tokens To Experts (All-to-All)
             all_shards_group_sizes = jax.lax.all_gather(
